@@ -81,12 +81,12 @@ def run_test(workdir_path: str):
         verbose=0,  # type: ignore
     )
     V_pred = CQPESData.unscale(V_pred_norm, params["V_min"], params["V_max"])
-    errors_meV = (V_pred - V_true) * 1000.0
+    errors_cm = (V_pred - V_true) * 8065.541 # eV to cm^-1
 
     # 5. summary
     _export_metrics(V_true, V_pred, indices, file_prefix)
-    _plot_error_scatter(V_true, errors_meV, indices, file_prefix)
-    _plot_error_dist(errors_meV, file_prefix)
+    _plot_error_scatter(V_true * 8065.541, errors_cm, indices, file_prefix)
+    _plot_error_dist(errors_cm, file_prefix)
 
 
 def _export_metrics(V_true, V_pred, indices: dict, file_prefix: str) -> None:
@@ -96,13 +96,13 @@ def _export_metrics(V_true, V_pred, indices: dict, file_prefix: str) -> None:
     eval_indices = {**indices, "Total": np.arange(len(V_true))}
 
     for name, idx in eval_indices.items():
-        y_t, y_p = V_true[idx] * 1000.0, V_pred[idx] * 1000.0
+        y_t, y_p = V_true[idx] * 8065.541, V_pred[idx] * 8065.541 # eV to cm^-1
         stats.append(
             {
                 "Set": name,
-                "MAE (meV)": mean_absolute_error(y_t, y_p),
-                "RMSE (meV)": np.sqrt(mean_squared_error(y_t, y_p)),
-                "MaxErr (meV)": np.abs(y_t - y_p).max(),
+                "MAE (cm^-1)": mean_absolute_error(y_t, y_p),
+                "RMSE (cm^-1)": np.sqrt(mean_squared_error(y_t, y_p)),
+                "MaxErr (cm^-1)": np.abs(y_t - y_p).max(),
             }
         )
 
@@ -132,8 +132,8 @@ def _plot_error_scatter(V_true, errors_meV, indices: dict, file_prefix: str) -> 
             )
 
         ax.axhline(0, color="#c0392b", linestyle="--", linewidth=1.5)
-        ax.set_xlabel(r"$\mathrm{Ab \ Initio \ Energy \ (eV)}$")
-        ax.set_ylabel(r"$\mathrm{Error \ (meV)}$")
+        ax.set_xlabel(r"$\mathrm{Ab \ Initio \ Energy \ (cm^{-1})}$")
+        ax.set_ylabel(r"$\mathrm{Error \ (cm^{-1})}$")
 
         ax.legend(loc="upper right", frameon=True)
 
@@ -143,11 +143,11 @@ def _plot_error_scatter(V_true, errors_meV, indices: dict, file_prefix: str) -> 
         print(f"  [{'SAVE':^10}] Scatter plot saved as: {plot_filename}")
 
 
-def _plot_error_dist(errors_meV, file_prefix: str) -> None:
+def _plot_error_dist(errors_cm, file_prefix: str) -> None:
     plot_filename = f"{file_prefix}_hist.png"
     print(f"  [{'PLOT':^10}] Generating histogram...")
 
-    abs_err = np.abs(errors_meV)
+    abs_err = np.abs(errors_cm)
     max_err = np.ceil(abs_err.max() * 2) / 2
     bin_width = 0.5 if max_err < 25 else max_err / 50
     edges = np.arange(0.0, max_err + bin_width, bin_width)
@@ -167,8 +167,8 @@ def _plot_error_dist(errors_meV, file_prefix: str) -> None:
             rwidth=0.9,
         )
 
-        ax.set_xlabel("Fitting Error (meV)", fontsize=12, fontweight="bold")
-        ax.set_ylabel("Distribution", fontsize=12, fontweight="bold")
+        ax.set_xlabel(r"$\mathrm{Fitting Error (cm^{-1})}$", fontsize=12, fontweight="bold")
+        ax.set_ylabel(r"$\mathrm{Distribution}$", fontsize=12, fontweight="bold")
 
         plt.savefig(plot_filename, bbox_inches="tight")
         plt.close(fig)
