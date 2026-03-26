@@ -52,7 +52,8 @@ def v_calc_V(
     energy_list: np.ndarray,
     ref_energy: float,
 ) -> np.ndarray:
-    V_list = (energy_list - ref_energy) * Hartree
+    #V_list = (energy_list - ref_energy) * Hartree
+    V_list = energy_list - ref_energy #直接使用eV进行拟合
 
     return V_list
 
