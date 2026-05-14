@@ -86,6 +86,7 @@ def run_train(
     import tf_levenberg_marquardt as lm
     from tensorflow.keras.callbacks import ModelCheckpoint  # type: ignore
     from tensorflow.keras.callbacks import TensorBoard  # type: ignore
+    from tensorflow.keras.callbacks import EarlyStopping #type: ignore
 
     from cqpes.utils.model import build_network
 
@@ -162,6 +163,16 @@ def run_train(
 
     tensorboard = TensorBoard(log_dir)
 
+    callbacks = [tensorboard, ckpt]
+
+    if config.fit.patience > 0:
+        early_stop = EarlyStopping(
+            monitor="val_wmse",
+            patience=config.fit.patience,
+            restore_best_weights=True,
+        )
+        callbacks.append(early_stop)
+
     # 7. start
     batch_size = (
         len(subset_idx_map["train"])
@@ -188,6 +199,6 @@ def run_train(
             y[subset_idx_map["valid"]],
             weights[subset_idx_map["valid"]],
         ),
-        callbacks=[tensorboard, ckpt],
+        callbacks=callbacks,
         verbose=2,  # type: ignore
     )

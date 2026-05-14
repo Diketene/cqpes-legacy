@@ -27,6 +27,7 @@ class FitConfig:
     lr: float = 0.001
     epoch: int = 1000
     batch_size: int = -1  # full batch
+    patience: int = 0 # early stop is banned defaultly
 
 
 @dataclass
