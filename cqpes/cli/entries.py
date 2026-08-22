@@ -123,7 +123,7 @@ def main() -> None:
     export_parser.add_argument(
         "-t",
         "--type",
-        choices=["h5", "potfit", "jaxpip"],
+        choices=["h5", "potfit", "jaxpip", "cpp_header"],
         default="h5",
         help="Export format",
     )

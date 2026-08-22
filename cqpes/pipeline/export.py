@@ -94,6 +94,45 @@ def _model2potfit(
 
     return weights_file, biases_file
 
+def _model2cpp_header(
+    model: Any, # tf.Keras.Model
+    output_dir: str,
+    p_min: np.ndarray,
+    p_max: np.ndarray,
+    V_min: float,
+    V_max: float
+) -> None:
+    """Export NN weights/biases as .inc files for Eigen comma-initializer."""
+
+    def _write_inc(name: str, values: np.ndarray) -> str:
+        path = os.path.join(output_dir, f"{name}.inc")
+        with open(path, 'w') as f:
+            for i, v in enumerate(values):
+                comma = ',' if i < len(values) - 1 else ''
+                f.write(f'  {v:.20e}{comma}\n')
+        return path
+
+    pdela = 0.5 * (
+        np.concatenate((p_max[1:], [V_max]))
+        - np.concatenate((p_min[1:], [V_min]))
+    )
+
+    pavga = 0.5 * (
+        np.concatenate((p_max[1:], [V_max]))
+        + np.concatenate((p_min[1:], [V_min]))
+    )
+
+    _write_inc('pdel', pdela)
+    _write_inc('pavg', pavga)
+
+    for idx, layer in enumerate(model.layers):
+        W, b = layer.get_weights()
+
+        _write_inc(f'w{idx + 1}', W.T.flatten())
+        _write_inc(f'b{idx + 1}', b)
+
+    return
+
 
 def _model2keras(
     model: Any,  # tf.keras.Model
@@ -211,7 +250,7 @@ def _model2jaxpip(
 
 def run_export(
     workdir_path: str,
-    export_type: Literal["h5", "potfit", "jaxpip"],
+    export_type: Literal["h5", "potfit", "jaxpip", "cpp_header"],
 ) -> None:
     # lazy import
     from cqpes._env import _setup_tensorflow
@@ -265,7 +304,10 @@ def run_export(
     model_wrapper.load_weights(best_ckpt_path)
 
     # 6. export
-    export_dir = workspace.get_subpath("export")
+    if export_type == "cpp_header":
+        export_dir = workspace.get_subpath("cpp_header")
+    else:
+        export_dir = workspace.get_subpath("export")
     os.makedirs(export_dir, exist_ok=True)
 
     if export_type == "h5":
@@ -306,6 +348,17 @@ def run_export(
             f"  [{'JAXPIP':^10}] Saved pure Equinox model to: "
             f"{os.path.basename(model_eqx)}"
         )
+    elif export_type == 'cpp_header':
+        _model2cpp_header(
+            model_wrapper.model,
+            export_dir,
+            **phys_dict
+        )
+        print(
+            f"  [{'CPP_HEADER':^10}] Saved cpp header to: "
+            f"{export_dir}"
+        )
+
 
     meta_path = os.path.join(export_dir, "model_info.json")
 
