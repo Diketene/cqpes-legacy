@@ -11,10 +11,20 @@ from cqpes.types import CQPESData, TrainConfig
 from cqpes.utils.train import find_best_checkpoint
 from cqpes.utils.workspace import ExperimentWorkspace
 
+eV_to_wavenumber = 8065.541
+
+_ERR_SCALE = {"eV": 1e3, "wavenumber": eV_to_wavenumber}
+_ENE_SCALE = {"eV": 1.0, "wavenumber": eV_to_wavenumber}
+_ERR_UNIT = {"eV": "meV", "wavenumber": "cm-1"}
+
 
 def run_test(
     workdir_path: str,
+    unit: str = "eV",
 ) -> None:
+    if unit not in _ERR_SCALE:
+        raise ValueError(f"unsupported unit: {unit!r} (choose 'eV' or 'wavenumber')")
+    
     # lazy import
     from cqpes._env import _setup_tensorflow
 
@@ -68,12 +78,12 @@ def run_test(
     y = model_wrapper(X_scaled, training=False).numpy()
     V_pred = CQPESData.unscale(y, phys_dict["V_min"], phys_dict["V_max"])
 
-    errors_meV = (V_pred - V_true) * 1.0e03
+    errors = (V_pred - V_true) * _ERR_SCALE[unit]
 
-    file_prefix = f"{os.path.basename(workspace.path)}_{label}"
+    file_prefix = f"{os.path.basename(workspace.path)}_{label}_{unit}"
 
-    _export_metrics(V_true, V_pred, subset_idx_map, eval_dir, file_prefix)
-    _plot_diagnostics(V_true, errors_meV, subset_idx_map, eval_dir, file_prefix)
+    _export_metrics(V_true, V_pred, subset_idx_map, eval_dir, file_prefix, unit)
+    _plot_diagnostics(V_true, errors, subset_idx_map, eval_dir, file_prefix, unit)
 
 
 def _export_metrics(
@@ -82,19 +92,20 @@ def _export_metrics(
     subset_idx_map: Dict[str, np.ndarray],
     output_dir: str,
     file_prefix: str,
+    unit: str,
 ) -> None:
     stats = []
     eval_indices = {**subset_idx_map, "Total": np.arange(len(V_true))}
 
     for name, idx in eval_indices.items():
-        y_t, y_p = V_true[idx] * 1.0e03, V_pred[idx] * 1.0e03
+        y_t, y_p = V_true[idx] * _ERR_SCALE[unit], V_pred[idx] * _ERR_SCALE[unit]
 
         stats.append(
             {
                 "Set": name,
-                "MAE (meV)": mean_absolute_error(y_t, y_p),
-                "RMSE (meV)": np.sqrt(mean_squared_error(y_t, y_p)),
-                "MaxErr (meV)": np.abs(y_t - y_p).max(),
+                f"MAE ({_ERR_UNIT[unit]})": mean_absolute_error(y_t, y_p),
+                f"RMSE ({_ERR_UNIT[unit]})": np.sqrt(mean_squared_error(y_t, y_p)),
+                f"MaxErr ({_ERR_UNIT[unit]})": np.abs(y_t - y_p).max(),
             }
         )
 
@@ -108,10 +119,11 @@ def _export_metrics(
 
 def _plot_error_scatter(
     V_true,
-    errors_meV,
+    errors,
     subset_idx_map: Dict[str, np.ndarray],
     output_dir: str,
     file_prefix: str,
+    unit: str,
 ) -> None:
     plot_path = os.path.join(output_dir, f"{file_prefix}_scatter.png")
 
@@ -124,8 +136,8 @@ def _plot_error_scatter(
 
         for name, idx in subset_idx_map.items():
             ax.scatter(
-                V_true[idx],
-                errors_meV[idx],
+                V_true[idx] * _ENE_SCALE[unit],
+                errors[idx],
                 c=colors[name],
                 alpha=0.5,
                 label=name,
@@ -133,8 +145,12 @@ def _plot_error_scatter(
             )
 
         ax.axhline(0, color="#c0392b", linestyle="--", linewidth=1.5)
-        ax.set_xlabel(r"$\mathrm{Ab \ Initio \ Energy \ (eV)}$")
-        ax.set_ylabel(r"$\mathrm{Error \ (meV)}$")
+        if unit == "eV":
+            ax.set_xlabel(r"$\mathrm{Ab \ Initio \ Energy \ (eV)}$")
+            ax.set_ylabel(r"$\mathrm{Error \ (meV)}$")
+        elif unit == "wavenumber":
+            ax.set_xlabel(r"$\mathrm{Ab \ Initio \ Energy \ (cm^{-1})}$")
+            ax.set_ylabel(r"$\mathrm{Error \ (cm^{-1})}$")
 
         ax.legend(loc="upper right", frameon=True)
 
@@ -145,18 +161,24 @@ def _plot_error_scatter(
 
 
 def _plot_error_dist(
-    errors_meV: np.ndarray,
+    errors: np.ndarray,
     output_dir: str,
     file_prefix: str,
+    unit: str,
 ) -> None:
     plot_path = os.path.join(output_dir, f"{file_prefix}_hist.png")
 
     print(f"  [{'PLOT':^10}] Generating histogram...")
 
-    abs_err = np.abs(errors_meV).flatten()
+    abs_err = np.abs(errors).flatten()
     upper_bound = np.percentile(abs_err, 99.5)
     max_err = np.ceil(upper_bound)
-    bin_width = 0.2 if max_err < 10 else 0.5
+    if unit == "eV":
+        bin_width = 0.2 if max_err < 10 else 0.5
+    elif unit == "wavenumber":
+        n_bins = 40
+        bin_width = max(max_err / n_bins, 1e-6)
+    
     edges = np.arange(0.0, max_err + bin_width, bin_width)
 
     with plt.style.context(["science", "no-latex"]):
@@ -174,8 +196,12 @@ def _plot_error_dist(
             rwidth=0.9,
         )
 
-        ax.set_xlabel("Fitting Error (meV)", fontsize=12, fontweight="bold")
-        ax.set_ylabel("Distribution", fontsize=12, fontweight="bold")
+        if unit == "eV":
+            ax.set_xlabel(r"$\mathrm{Fitting \ Error \ (meV)}$", fontsize=12, fontweight="bold")
+        elif unit == "wavenumber":
+            ax.set_xlabel(r"$\mathrm{Fitting \ Error \ (cm^{-1})}$", fontsize=12, fontweight="bold")
+
+        ax.set_ylabel(r"$\mathrm{Distribution}$", fontsize=12, fontweight="bold")
 
         mae = np.mean(abs_err).item()
 
@@ -197,21 +223,24 @@ def _plot_error_dist(
 
 def _plot_diagnostics(
     V_true: np.ndarray,
-    errors_meV: np.ndarray,
+    errors: np.ndarray,
     subset_idx_map: Dict[str, np.ndarray],
     output_dir: str,
     file_prefix: str,
+    unit: str
 ) -> None:
     _plot_error_scatter(
         V_true=V_true,
-        errors_meV=errors_meV,
+        errors=errors,
         subset_idx_map=subset_idx_map,
         output_dir=output_dir,
         file_prefix=file_prefix,
+        unit=unit,
     )
 
     _plot_error_dist(
-        errors_meV=errors_meV,
+        errors=errors,
         output_dir=output_dir,
         file_prefix=file_prefix,
+        unit=unit,
     )

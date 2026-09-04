@@ -109,6 +109,14 @@ def main() -> None:
         help="Path to the workdir",
     )
 
+    test_parser.add_argument(
+        "-u",
+        "--unit",
+        choices=["eV", "wavenumber"],
+        default="eV",
+        help="Energy unit for plotting: 'eV' or 'wavenumber'(cm^-1)",
+    )
+
     # 4. export
     export_parser = subparsers.add_parser(
         "export",
@@ -293,7 +301,7 @@ def main() -> None:
     elif args.command == "train":
         _run_train(args.config)
     elif args.command == "test":
-        _run_test(args.workdir)
+        _run_test(args.workdir, unit=args.unit)
     elif args.command == "export":
         _run_export(
             args.workdir,
@@ -385,13 +393,14 @@ def _run_export(
 
 def _run_test(
     workdir_path: str,
+    unit: Literal["eV", "wavenumber"] = "eV"
 ) -> None:
     from cqpes.pipeline.test import run_test
     from cqpes.utils.logger import print_header
 
     try:
         print_header("MODEL EVALUATION")
-        run_test(workdir_path)
+        run_test(workdir_path, unit=unit)
     except Exception as e:
         print(f"\n[ERROR] Evaluation failed: {e}", file=sys.stderr)
         sys.exit(1)
